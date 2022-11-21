@@ -1,6 +1,6 @@
 # Interactive Machine Learning Backend
 
-This serves as the web service exposing a RESTful API to interact with various machine learning models implemented from the ground up.
+This serves as the web service exposing a RESTful API to interact with various machine learning models.
 
 ## Usage
 
