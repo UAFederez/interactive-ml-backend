@@ -14,7 +14,7 @@ python api.py
 
 <strong>`POST`</strong> `/api/linear-regression-uni`
 
-### Request JSON Body Payload Parameters
+### Request JSON Body Parameters
 
 | Parameter       | Default | Type      | Allowable values                | Description                                                                                                                                      |
 | --------------- | ------- | --------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -39,7 +39,7 @@ python api.py
 
 <strong>`POST`</strong> `/api/linear-regression-mul`
 
-### Request JSON Body Payload Parameters
+### Request JSON Body Parameters
 
 | Parameter       | Default | Type        | Allowable values                    | Description                                                                                                                                      |
 | --------------- | ------- | ----------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
