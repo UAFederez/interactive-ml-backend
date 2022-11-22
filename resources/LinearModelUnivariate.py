@@ -66,7 +66,10 @@ class LinearModelUnivariate(Resource):
             }
             if 'include_hist' in data and data['include_hist']:
                 response['loss_hist']  = loss_hist.tolist()
-                response['param_hist'] =  param_hist.tolist()
+                response['param_hist'] =  {
+                    'w' : param_hist[:, 0].tolist(),
+                    'b' : param_hist[:, 1].tolist()
+                }
 
         elif method == 'direct':
             w_se, b_se = self.calc_optimal_params_system_of_eq(train_x, train_y)
