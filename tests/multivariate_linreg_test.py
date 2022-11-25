@@ -10,14 +10,18 @@ diabetes_X = np.row_stack([diabetes_X, np.full((1, diabetes_X.shape[1]), 1)])
 diabetes_Y = diabetes_Y[:, np.newaxis].T
 
 dataset = {
-    'method' : 'gradient_descent',
+    'method' : 'normal_eq',
     'train_x': diabetes_X.tolist(),
     'train_y': diabetes_Y.tolist(),
     'epochs' : 100,
     'learning_rate': 0.1,
-    'include_hist': False,
+    'include_hist': True,
 }
 
-response = post('http://127.0.0.1:5000/api/linear-regression-mul', headers={'Content-Type' : 'application/json'}, data = json.dumps(dataset)).json()
+response = post('http://127.0.0.1:5000/api/linear-regression-mul', 
+                headers = {
+                    'Content-Type' : 'application/json'
+                }, 
+                data = json.dumps(dataset)).json()
 
-print(response)
+print(json.dumps(response, indent = 1))

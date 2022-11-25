@@ -7,6 +7,8 @@ class LinearModelMultivariate(Resource):
     def calc_optimal_params_grad_descent(self, train_X, train_Y, num_epochs, learning_rate):    
         n, m = train_X.shape
         w    = np.random.randn(n, 1)
+
+        param_hist = np.zeros((num_epochs, n))
         
         loss_hist = np.zeros(num_epochs)
         
@@ -17,11 +19,12 @@ class LinearModelMultivariate(Resource):
             
             # Calculate gradients
             grad_W = np.dot(train_X, (Y_pred - train_Y).T) / m
+            param_hist[i] = w[:, 0]
             
             # Update the weights
             w = w - (learning_rate * grad_W)
             
-        return w, loss_hist
+        return w, loss_hist, param_hist
 
     def post(self):
         data = request.json
@@ -35,19 +38,22 @@ class LinearModelMultivariate(Resource):
         response = dict()
 
         if method == 'gradient_descent':
-            weights, loss_hist = self.calc_optimal_params_grad_descent(train_x, train_y, epochs, learning_rate)
+            weights, loss_hist, param_hist = self.calc_optimal_params_grad_descent(train_x, train_y, epochs, learning_rate)
             response = {
                 'status'     : 'success',
-                'weights'    : weights.tolist(),
+                'weights'    : weights[:, 0].tolist(),
             }
             if 'include_hist' in data and data['include_hist']:
-                response['loss_hist'] = loss_hist.tolist()
+                response['history'] = {
+                    'loss'    : loss_hist.tolist(),
+                    'weights' : param_hist.tolist()
+                }
                 
         elif method == 'normal_eq':
             weights = np.dot(np.linalg.inv(np.dot(train_x, train_x.T)), np.dot(train_x, train_y.T))
             response = {
                 'status' : 'success',
-                'weights': weights.tolist(),
+                'weights': weights[:,0].tolist(),
             }
         else:
             response = {
