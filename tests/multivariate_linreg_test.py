@@ -18,6 +18,8 @@ dataset = {
     'include_hist': True,
 }
 
+print(diabetes_X.shape)
+
 response = post('http://127.0.0.1:5000/api/linear-regression-mul', 
                 headers = {
                     'Content-Type' : 'application/json'

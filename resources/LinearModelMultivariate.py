@@ -5,6 +5,7 @@ import numpy as np
 
 class LinearModelMultivariate(Resource):
     def calc_optimal_params_grad_descent(self, train_X, train_Y, num_epochs, learning_rate):    
+        train_X = np.row_stack([train_X, np.full((1, train_X.shape[1]), 1)])
         n, m = train_X.shape
         w    = np.random.randn(n, 1)
 
