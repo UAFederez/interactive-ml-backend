@@ -11,28 +11,33 @@ class NeuralNetworkImpl:
         self.loss_function = loss_function
 
         self.activation = {
-            'sigmoid': lambda z : 1 / (1 + np.exp(-z)),
-            'tanh'   : lambda z : np.tanh(z),
-            'relu'   : lambda z : np.maximum(0, z)
+            'sigmoid' : lambda z : 1 / (1 + np.exp(-z)),
+            'relu'    : lambda z : np.maximum(0, z),
+            'softmax' : lambda z : np.exp(z) / np.sum(np.exp(z), axis = 0),
+            'identity': lambda z : z
         }
         self.activation_prime = {
-            'sigmoid': lambda a_out, z_out : a_out * (1 - a_out),
-            'tanh'   : lambda a_out, z_out : 1 - (np.tanh(a_out) ** 2),
-            'relu'   : lambda a_out, z_out : a_out > 0.0
+            'sigmoid' : lambda a_out, z_out : a_out * (1 - a_out),
+            'relu'    : lambda a_out, z_out : a_out > 0.0,
+            'identity': lambda a_out, z_out : np.ones(a_out.shape),
+            'softmax' : lambda a_out, z_out : a_out # handled using special case with the Jacobian matrix
         }
         self.losses_func = {
-            'binary_crossentropy': lambda y_pred, y_true: -(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred))
+            'binary_crossentropy'     : lambda y_pred, y_true: -(y_true * np.log(y_pred) + (1 - y_true) * np.log(1 - y_pred)),
+            'categorical_crossentropy': lambda y_pred, y_true: -np.log(np.sum(y_pred * y_true, axis = 0))
         }
         
         self.losses_prime = {
-            'binary_crossentropy': lambda y_pred, y_true: (y_pred - y_true) / (y_pred * (1 - y_pred))
+            'binary_crossentropy'     : lambda y_pred, y_true: (y_pred - y_true) / (y_pred * (1 - y_pred)),
+            'categorical_crossentropy': lambda y_pred, y_true: -y_true / y_pred
         }
         self.metrics_func = {
-            'binary_class_accuracy': lambda y_pred, y_true: np.mean(np.round(y_pred) == y_true)
+            'binary_class_accuracy': lambda y_pred, y_true: np.mean(np.round(y_pred) == y_true),
+            'multiclass_accuracy'  : lambda y_pred, y_true: np.mean(np.argmax(y_pred, axis = 0) == np.argmax(y_true, axis = 0))
         }
         
         self.loss_func  = self.losses_func[loss_function]
-        self.loss_prime = self.losses_prime[loss_function] 
+        self.loss_prime = self.losses_prime[loss_function]
 
     @staticmethod
     def from_architecture(layer_sizes, activations, loss_function):
@@ -60,6 +65,10 @@ class NeuralNetworkImpl:
                 g_func = self.activation[self.layer_activations[idx]]
                 Z_prev = a_outs[idx]
                 Z_next = np.dot(weights.T, Z_prev) + biases
+                
+                if self.layer_activations[idx] == 'softmax':
+                    Z_next = Z_next - Z_next.max(axis = 0)
+                
                 A_next = g_func(Z_next)
                 
                 z_outs.append(Z_next)
@@ -83,8 +92,15 @@ class NeuralNetworkImpl:
                 z_curr = z_outs[idx + 1]
                 a_prev = a_outs[idx]
                 
-                g_prime  = self.activation_prime[self.layer_activations[idx]]
-                dLoss_dZ = dLoss_dAs[len(self.weights) - 1 - idx] * g_prime(a_curr, z_curr)
+                dLoss_dA_curr = dLoss_dAs[len(self.weights) - 1 - idx]
+                
+                if self.layer_activations[idx] == 'softmax':
+                    diags       = np.einsum('kx,kw->xwk', a_curr, np.identity(a_curr.shape[0]))
+                    dSoftmax_dZ = np.einsum('zx,xk->xkz', -a_curr, a_curr.T) + diags
+                    dLoss_dZ    = np.einsum('xhw,wx->hx', dSoftmax_dZ, dLoss_dA_curr)
+                else:
+                    g_prime  = self.activation_prime[self.layer_activations[idx]]
+                    dLoss_dZ = dLoss_dA_curr * g_prime(a_curr, z_curr)
                 
                 dLoss_dw = np.dot(a_prev, dLoss_dZ.T) / len_ds
                 dLoss_db = np.mean(dLoss_dZ, axis = 1, keepdims = True)
@@ -114,7 +130,10 @@ class NeuralNetworkImpl:
 
             z_outs = Z_next
             a_outs = A_next
-                
+        
+        if self.layer_activations[-1] == 'softmax':
+            return np.argmax(a_outs, axis = 0)
+
         return a_outs[-1]
 
 class NeuralNetwork(Resource):
@@ -130,8 +149,6 @@ class NeuralNetwork(Resource):
     def predict_model(self, data):
         data = request.json
         train_x = np.array(data['train_x'])
-
-        print('predict', train_x.shape)
 
         weights = [ np.array(weight_matrix) for weight_matrix in data['model']['weights'] ]
         biases  = [ np.array(biases_vector) for biases_vector in data['model']['biases'] ]
@@ -149,10 +166,12 @@ class NeuralNetwork(Resource):
     def train_model(self, data):
         train_x = np.array(data['train_x'])
         train_y = np.array(data['train_y'])
+        metrics = np.array(data['metrics'])
         epochs         = data['epochs']
         learning_rate  = data['learning_rate']
 
-        print('train', train_x.shape)
+        if data['layer_activations'][-1] == 'softmax':
+            train_y = train_y.T
 
         model = NeuralNetworkImpl.from_architecture(
             data['layer_sizes'], 
@@ -163,7 +182,7 @@ class NeuralNetwork(Resource):
         loss_hist, metrics_hist = model.train(train_x, train_y, 
                                               num_epochs = min(epochs, 1000), 
                                               learning_rate = learning_rate, 
-                                              metrics = ['binary_class_accuracy'])
+                                              metrics = metrics)
 
         response = {
             'status' : 'success',
