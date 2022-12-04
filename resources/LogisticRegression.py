@@ -13,7 +13,8 @@ class LogisticRegression(Resource):
         w    = np.random.randn(n, 1)
         print(w.shape)
 
-        param_hist = np.zeros((num_epochs, n))
+        param_hist    = np.zeros((num_epochs, n))
+        accuracy_hist = []
         
         loss_hist = np.zeros(num_epochs)
         
@@ -24,6 +25,8 @@ class LogisticRegression(Resource):
             bce_loss = np.mean((Y_pred - train_Y) ** 2) / 2.0
             loss_hist[i] = bce_loss
 
+            accuracy_hist.append(np.mean(np.round(Y_pred) == train_Y))
+
             param_hist[i] = w[:, 0]
             
             # Calculate gradients
@@ -32,8 +35,7 @@ class LogisticRegression(Resource):
             # Update the weights
             w = w - (learning_rate * grad_W)
             
-        print(w.shape)
-        return w, loss_hist, param_hist
+        return w, loss_hist, param_hist, accuracy_hist
 
     def post(self):
         data = request.json
@@ -42,7 +44,7 @@ class LogisticRegression(Resource):
         epochs         = data['epochs']
         learning_rate  = data['learning_rate']
 
-        weights, loss_hist, param_hist = self.calc_optimal_params_grad_descent(train_x, train_y, epochs, learning_rate)
+        weights, loss_hist, param_hist, accuracy_hist = self.calc_optimal_params_grad_descent(train_x, train_y, epochs, learning_rate)
 
         response = {
             'status' : 'success',
@@ -52,7 +54,8 @@ class LogisticRegression(Resource):
         if 'include_hist' in data and data['include_hist'] == True:
             response['history'] = {
                 'loss'      : loss_hist.tolist(),
-                'param_hist': param_hist.tolist()
+                'param_hist': param_hist.tolist(),
+                'accuracy_hist': accuracy_hist
             }
 
         return response
