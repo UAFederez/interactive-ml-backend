@@ -43,12 +43,15 @@ for pred in predictors:
     })
 
 request_body = {
+    'task': 'train',
     'train_features': train_features,
     'train_labels'  : {
         'name'  : target,
         'values': dataset[target].tolist()
     }
 }
+
+print(json.dumps(request_body, indent = 4))
 
 #print({feature['name'] : feature['values'] for feature in request_body['train_features']})
 
@@ -58,5 +61,32 @@ response = post('http://127.0.0.1:5000/api/decision-trees',
                 }, 
                 data = json.dumps(request_body)).json()
 
-src = graphviz.Source(response['graphviz_output'])
-print(json.dumps(response, indent = 1))
+src = graphviz.Source(response['graphviz_output'], format="png")
+# src.view()
+# print(json.dumps(response, indent = 1))
+
+test_data = []
+
+for idx in range(len(dataset)):
+    test_data.append({
+        key: dataset.iloc[idx][key] for key in predictors
+    })
+
+request_body = {
+    'task': 'predict',
+    'serialized_tree': response['tree_serialized'],
+    'test_data': test_data,
+}
+
+response = post('http://127.0.0.1:5000/api/decision-trees', 
+                headers = {
+                    'Content-Type' : 'application/json'
+                }, 
+                data = json.dumps(request_body)).json()
+
+y_pred = np.array(response['predicted'])
+y_true = np.array(dataset[target].tolist())
+
+print('y_pred', y_pred)
+print('y_true', y_true)
+print('accuracy', np.mean(y_pred == y_true))
