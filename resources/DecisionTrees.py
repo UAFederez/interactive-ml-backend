@@ -51,7 +51,14 @@ class NumericDecision(DecisionNode):
     def find_weighted_entropy(self, data, predictor, target):
         data = data[[predictor, target]].copy()
         data = data.sort_values(by = [predictor], axis = 0, ascending = True).reset_index()
-        root_positive_frac = data[target].value_counts(normalize = True)[1]
+
+        value_counts = data[target].value_counts(normalize = True)
+
+        if 1 in value_counts.index:
+            root_positive_frac = value_counts[1]
+        else:
+            root_positive_frac = 1.0 - value_counts[0]
+
         data['pct_y_leq']  = (data[target].astype('float64').cumsum() / data.shape[0])
         data['pct_y_g']    = (root_positive_frac - data['pct_y_leq']).astype('float64')
         data['bce_y_leq']  = binary_cross_entropy_series(data['pct_y_leq'])
@@ -91,15 +98,17 @@ def plot_decision_tree(root, dot, depth = 0):
     return node_id
 
 class DecisionTrees(Resource):
-    def build_tree(self, data, predictors, target, curr_depth = 0, max_depth = 12, info_gain_min = 1e-3, entropy_min = 1e-3, min_samples_leaf = 10):
+    def build_tree(self, data, predictors, target, curr_depth = 0, max_depth = 12, info_gain_min = 1e-3, entropy_min = 1e-3, min_samples_leaf = 1):
         categorical = [ pred for pred in predictors if pd.api.types.is_categorical_dtype(data[pred]) ]
         numeric     = [ pred for pred in predictors if pd.api.types.is_numeric_dtype(data[pred]) ]
         
-        #print(categorical)
-        #print(numeric)
-        
-        parent_entropy = data[target].value_counts(normalize = True)
-        parent_entropy = binary_cross_entropy_series(parent_entropy[1])[0]
+        value_counts   = data[target].value_counts(normalize = True)
+
+        if 1 in value_counts.index:
+            parent_entropy = binary_cross_entropy_series(value_counts[1])[0]
+        else:
+            parent_entropy = 1.0 - binary_cross_entropy_series(value_counts[0])[0]
+
         entropy_vals   = []
         
         # Calculate entropy for each categorical variable
@@ -187,28 +196,111 @@ class DecisionTrees(Resource):
                 return LeafNode(tree.left_child.class_label)
         
         return tree
+
+    def deserialize_tree(self, root):
+        if not root:
+            return None
+        
+        node = None
+
+        if root['type'] == 'binary_decision':
+            node = BinaryDecisionNode()
+            node.predictor = root['predictor']
+        elif root['type'] == 'numeric_decision':
+            node = NumericDecision()
+            node.predictor = root['predictor']
+            node.split_val = root['split_value']
+        elif root['type'] == 'leaf_decision_node':
+            node = LeafNode(root['label'])
+
+        if 'left_child' in root:
+            node.left_child = self.deserialize_tree(root['left_child'])
+        if 'right_child' in root:
+            node.right_child = self.deserialize_tree(root['right_child'])
+
+        return node
+
+    def serialize_tree(self, root):
+        if not root:
+            return {}
+
+        node_data = {}
+
+        if isinstance(root, BinaryDecision):
+            node_data['type'] = 'binary_decision'
+            node_data['predictor'] = root.predictor
+        elif isinstance(root, NumericDecision):
+            node_data['type'] = 'numeric_decision'
+            node_data['predictor'] = root.predictor
+            node_data['split_value'] = float(root.split_val)
+        elif isinstance(root, DecisionNode):
+            node_data['type']  = 'leaf_decision_node'
+            node_data['label'] = int(root.class_label)
+
+        if root.left_child is not None:
+            node_data['left_child'] = self.serialize_tree(root.left_child)
+
+        if root.right_child is not None:
+            node_data['right_child'] = self.serialize_tree(root.right_child)
+
+        return node_data
+
+    def predict(self, record, root):
+        if isinstance(root, LeafNode):
+            return root.class_label
+
+        if isinstance(root, NumericDecision):
+            if record[root.predictor] <= root.split_val:
+                return self.predict(record, root.left_child)
+            else:
+                return self.predict(record, root.right_child)
+        elif isinstance(root, BinaryDecision):
+            if record[root.predictor] == 0.0:
+                return self.predict(record, root.left_child)
+            else:
+                return self.predict(record, root.right_child)
         
     def post(self):
         data = request.json
-        
-        train_features = { feature['name']: feature['values']  for feature in data['train_features'] }
-        train_label_name, train_labels = data['train_labels']['name'], data['train_labels']['values']
+        task = data['task']
 
-        dataset = pd.DataFrame.from_dict(train_features)
-        dataset[train_label_name] = train_labels
+        if task == 'predict':
+            tree_data = data['serialized_tree']
+            tree_root = self.deserialize_tree(tree_data)
 
-        predictors = [ feature['name'] for feature in data['train_features'] ]
-        target     = train_label_name
+            test_data = data['test_data']
+            predicted_labels = []
 
-        print(predictors, target)
+            for record in test_data:
+                predicted_labels.append(self.predict(record, tree_root))
 
-        tree = self.build_tree(dataset, predictors, target, max_depth = 6)
-        tree = self.prune_tree(tree)
+            return {
+                'predicted': predicted_labels,
+            }
 
-        dot = graphviz.Digraph(comment = 'Decision Tree Plot')
-        dot.attr('node', shape = 'box', nodesep = '0.1')
-        plot_decision_tree(tree, dot)
 
-        return {
-            'graphviz_output': dot.source
-        }
+        elif task == 'train':
+            train_features = { feature['name']: feature['values']  for feature in data['train_features'] }
+            train_label_name, train_labels = data['train_labels']['name'], data['train_labels']['values']
+
+            dataset = pd.DataFrame.from_dict(train_features)
+            dataset[train_label_name] = train_labels
+
+            predictors = [ feature['name'] for feature in data['train_features'] ]
+            target     = train_label_name
+
+            tree = self.build_tree(dataset, predictors, target, max_depth = 6)
+            tree = self.prune_tree(tree)
+
+            dot = graphviz.Digraph(comment = 'Decision Tree Plot')
+            dot.attr('node', shape = 'box', nodesep = '0.1')
+            plot_decision_tree(tree, dot)
+
+            serialized_tree = self.serialize_tree(tree)
+
+            return {
+                'graphviz_output': dot.source,
+                'tree_serialized': serialized_tree
+            }
+        else:
+            return { 'error': 'invalid task supplied' }
