@@ -283,14 +283,19 @@ class DecisionTrees(Resource):
             train_features = { feature['name']: feature['values']  for feature in data['train_features'] }
             train_label_name, train_labels = data['train_labels']['name'], data['train_labels']['values']
 
+            min_samples_leaf = data['min_samples_leaf']
+            max_depth = data['max_depth']
+
             dataset = pd.DataFrame.from_dict(train_features)
             dataset[train_label_name] = train_labels
 
             predictors = [ feature['name'] for feature in data['train_features'] ]
             target     = train_label_name
 
-            tree = self.build_tree(dataset, predictors, target, max_depth = 6)
-            tree = self.prune_tree(tree)
+            tree = self.build_tree(dataset, predictors, target, max_depth = max_depth, min_samples_leaf = min_samples_leaf)
+
+            if 'will_prune' in data and data['will_prune'] == True:
+                tree = self.prune_tree(tree)
 
             dot = graphviz.Digraph(comment = 'Decision Tree Plot')
             dot.attr('node', shape = 'box', nodesep = '0.1')
